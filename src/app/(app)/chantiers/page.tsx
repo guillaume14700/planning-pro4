@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { HardHat, Plus, MapPin, Phone, Route, Clock, Pencil, Trash2, User, StickyNote, Globe, Navigation, Calculator } from "lucide-react";
+import { HardHat, Plus, MapPin, Phone, Route, Clock, Pencil, Trash2, User, StickyNote, Globe, Navigation, Calculator, Upload, Download, FileSpreadsheet, CheckCircle2, TriangleAlert } from "lucide-react";
 import { useApp, api, ChantierT, ModuleGate } from "@/components/app-provider";
 import { Badge, Button, Card, Confirm, Empty, ErrorNote, Field, Input, Modal, PageHead, Textarea, Toggle } from "@/components/ui";
 import { PALETTE } from "@/lib/utils";
@@ -21,8 +21,31 @@ function Chantiers() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState<number | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [geoBusy, setGeoBusy] = useState<string | null>(null);
 
   const shown = isAdmin ? chantiers : chantiers.filter((c) => c.active);
+
+  /* Localise + calcule distance/trajet pour TOUS les chantiers sans coordonnées (file d'attente polie, ~2 s/site). */
+  async function locateAll() {
+    const targets = chantiers.filter((c) => c.active && c.address && (c.lat == null || c.lng == null));
+    if (targets.length === 0) { toast("Tous les chantiers ayant une adresse sont déjà placés sur la carte", "ok"); return; }
+    let ok = 0; let ko = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const c = targets[i]!;
+      setGeoBusy(`${i + 1}/${targets.length}`);
+      try {
+        const g = await api<{ lat: number; lon: number }>(`/api/geo?q=${encodeURIComponent(c.address)}`);
+        const r = await api<{ distanceKm: number; travelMin: number }>(`/api/geo?from=${settings.depotLat},${settings.depotLng}&to=${g.lat},${g.lon}`);
+        await api(`/api/chantiers/${c.id}`, "PATCH", { lat: g.lat, lng: g.lon, distanceKm: r.distanceKm, travelMin: r.travelMin });
+        ok++;
+      } catch { ko++; }
+      await new Promise((res) => setTimeout(res, 1100));
+    }
+    setGeoBusy(null);
+    await refresh();
+    toast(`📍 Cartographie terminée : ${ok} chantier(s) placé(s) et mesuré(s)${ko ? `, ${ko} adresse(s) non trouvée(s)` : ""}`, ko ? "panne" : "ok");
+  }
 
   /* Géolocalise l'adresse (OpenStreetMap) puis calcule distance/temps depuis le dépôt (OSRM). */
   async function locate(c: ChantierT) {
@@ -80,7 +103,15 @@ function Chantiers() {
       <PageHead
         title="Chantiers" subtitle="Distance dépôt ↔ chantier et temps de trajet utilisés dans tout le planning."
         icon={<HardHat size={22} />}
-        actions={isAdmin ? <Button onClick={() => { setError(""); setForm({ ...empty }); }}><Plus size={16} /> Nouveau chantier</Button> : undefined}
+        actions={isAdmin ? (
+          <>
+            <Button variant="outline" onClick={() => setImportOpen(true)}><Upload size={16} /> Importer une liste (CSV)</Button>
+            <Button variant="outline" onClick={locateAll} disabled={geoBusy != null}>
+              <Navigation size={16} /> {geoBusy ? `Cartographie ${geoBusy}…` : "Tout placer & calculer"}
+            </Button>
+            <Button onClick={() => { setError(""); setForm({ ...empty }); }}><Plus size={16} /> Nouveau chantier</Button>
+          </>
+        ) : undefined}
       />
       {shown.length === 0 ? <Card><Empty text="Aucun chantier enregistré." icon={<HardHat size={28} />} /></Card> : (
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -220,6 +251,194 @@ function Chantiers() {
       </Modal>
 
       <Confirm open={del != null} onClose={() => setDel(null)} onConfirm={doDelete} title="Supprimer le chantier" message="Les missions liées resteront au planning mais sans fiche chantier. Préférez désactiver le chantier si des missions existent." confirmLabel="Supprimer" danger />
+
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
+  );
+}
+
+/* ================= IMPORT CSV ================= */
+
+function parseCSV(text: string): string[][] {
+  const t = text.replace(/^\uFEFF/, "");
+  const nl = t.indexOf("\n");
+  const firstLine = nl === -1 ? t : t.slice(0, nl);
+  const semi = (firstLine.match(/;/g) || []).length;
+  const comma = (firstLine.match(/,/g) || []).length;
+  const delim = semi >= comma ? ";" : ",";
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQ = false;
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i]!;
+    if (inQ) {
+      if (ch === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+      else cell += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === delim) { row.push(cell); cell = ""; }
+    else if (ch === "\n") { row.push(cell.trim()); rows.push(row); row = []; cell = ""; }
+    else if (ch !== "\r") cell += ch;
+  }
+  if (cell.trim() !== "" || row.length) { row.push(cell.trim()); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c !== ""));
+}
+
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+const ALIASES: Record<string, string[]> = {
+  name: ["nom", "name", "chantier", "nomchantier", "nomduchantier", "libelle", "affaire"],
+  client: ["client", "entreprise", "societe", "maitreouvrage"],
+  address: ["adresse", "address", "lieu", "localisation", "ville"],
+  contactName: ["contact", "nomcontact", "contactchantier", "interlocuteur", "contactsurplace", "chefdechantier"],
+  contactPhone: ["telephone", "tel", "phone", "numero", "telephonecontact", "telcontact"],
+  distanceKm: ["distancekm", "distance", "km", "kms"],
+  travelMin: ["trajetmin", "trajet", "tempsmin", "temps", "minutes", "duree", "dureemin", "tempsdemin"],
+  notes: ["notes", "note", "commentaire", "commentaires", "consignes", "observation", "observations", "remarque", "remarques"],
+};
+
+type Parsed = { name: string; client: string; address: string; contactName: string; contactPhone: string; distanceKm: string; travelMin: string; notes: string };
+
+function mapRows(grid: string[][]): { rows: Parsed[]; error?: string; hasHeader: boolean } {
+  if (grid.length === 0) return { rows: [], error: "Fichier vide.", hasHeader: false };
+  const first = grid[0]!.map(norm);
+  const mapping: (keyof Parsed | null)[] = first.map((h) => {
+    for (const [key, list] of Object.entries(ALIASES)) if (list.includes(h)) return key as keyof Parsed;
+    return null;
+  });
+  const hasHeader = mapping.includes("name");
+  const body = hasHeader ? grid.slice(1) : grid;
+  const rows: Parsed[] = [];
+  for (const r of body) {
+    const o: Parsed = { name: "", client: "", address: "", contactName: "", contactPhone: "", distanceKm: "", travelMin: "", notes: "" };
+    if (hasHeader) {
+      mapping.forEach((k, i) => { if (k) o[k] = (r[i] ?? "").trim(); });
+    } else if (r.length <= 2) {
+      o.name = (r[0] ?? "").trim();
+      o.address = (r[1] ?? "").trim();
+    } else {
+      return { rows: [], hasHeader, error: "Fichier non reconnu : utilisez le modèle (1re ligne d'en-tête : nom;client;adresse;contact;telephone;distance_km;trajet_min;notes)." };
+    }
+    if (o.name) rows.push(o);
+  }
+  return { rows, hasHeader, error: rows.length === 0 ? "Aucun chantier trouvé dans le fichier (colonne « nom » vide ?)." : undefined };
+}
+
+function ImportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast, refresh } = useApp();
+  const [rows, setRows] = useState<Parsed[] | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [parseError, setParseError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ imported: number; duplicates: string[]; errors: { line: number; reason: string }[] } | null>(null);
+
+  function downloadTemplate() {
+    const csv = "nom;client;adresse;contact;telephone;distance_km;trajet_min;notes\n" +
+      "Résidence Les Cèdres;Bouygues Bâtiment;8 cours Émile Zola, 69100 Villeurbanne;M. Lambert;06 12 34 56 78;;;Livraisons avant 9h\n" +
+      "Échangeur A7 Givors;Eiffage Route;Zone des Vernes, 69700 Givors;;;;;\n";
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "modele-chantiers.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function onFile(f: File | null) {
+    if (!f) return;
+    setResult(null); setParseError(""); setRows(null);
+    setFileName(f.name);
+    const text = await f.text();
+    const { rows: parsed, error } = mapRows(parseCSV(text));
+    if (error) { setParseError(error); return; }
+    setRows(parsed.slice(0, 500));
+  }
+
+  async function doImport() {
+    if (!rows?.length) return;
+    setBusy(true);
+    try {
+      const res = await api<{ imported: number; duplicates: string[]; errors: { line: number; reason: string }[] }>("/api/import/chantiers", "POST", { rows });
+      setResult(res);
+      toast(`📥 ${res.imported} chantier(s) importé(s) — équipe notifiée`, "ok");
+      await refresh();
+    } catch (e) { setParseError(e instanceof Error ? e.message : "Erreur"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} wide title={<span className="flex items-center gap-2"><FileSpreadsheet size={20} className="text-brand" /> Importer une liste de chantiers</span>} footer={
+      result ? <Button onClick={onClose}>Fermer</Button> : (
+        <>
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
+          <Button onClick={doImport} disabled={!rows?.length || busy}>{busy ? "Import en cours…" : `Importer ${rows?.length ?? 0} chantier(s)`}</Button>
+        </>
+      )
+    }>
+      <div className="space-y-4">
+        {result ? (
+          <div className="space-y-3">
+            <p className="text-sm font-bold text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2.5 flex items-center gap-2">
+              <CheckCircle2 size={17} /> {result.imported} chantier(s) importé(s) avec succès — l'équipe a été notifiée.
+            </p>
+            {result.duplicates.length > 0 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-md px-3 py-2">
+                <TriangleAlert size={13} className="inline mr-1" /> Doublon(s) ignoré(s) (déjà existants) : {result.duplicates.join(", ")}
+              </p>
+            )}
+            {result.errors.length > 0 && (
+              <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                Ligne(s) en erreur : {result.errors.map((e) => `n°${e.line} (${e.reason})`).join(", ")}
+              </p>
+            )}
+            <p className="text-xs text-steel">💡 Astuce : bouton « Tout placer & calculer » sur la page Chantiers → toutes les adresses sont placées sur la carte et les distances/temps de trajet depuis le dépôt sont calculés automatiquement.</p>
+          </div>
+        ) : (
+          <>
+            <ol className="text-sm text-gray-700 space-y-1.5 list-decimal list-inside">
+              <li><button onClick={downloadTemplate} className="inline-flex items-center gap-1.5 text-brand font-bold underline hover:text-coal cursor-pointer"><Download size={14} /> Télécharger le modèle (modele-chantiers.csv)</button></li>
+              <li>Ouvrez-le dans <strong>Excel</strong> (ou LibreOffice) et remplissez une ligne par chantier — seule la colonne <strong>nom</strong> est obligatoire, l'<strong>adresse complète</strong> est fortement conseillée (carte + calcul de distance)</li>
+              <li>Enregistrez : <strong>Fichier → Enregistrer sous → format « CSV UTF-8 (délimité par des points-virgules) »</strong></li>
+              <li>Ci-dessous, sélectionnez votre fichier, vérifiez l'aperçu, puis importez</li>
+            </ol>
+            <label className="block border-2 border-dashed border-gray-300 hover:border-brand rounded-lg p-5 text-center cursor-pointer transition-colors">
+              <input type="file" accept=".csv,text/csv,text/plain" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+              <Upload size={22} className="mx-auto text-brand mb-1.5" />
+              <span className="text-sm font-bold">Cliquez pour choisir votre fichier .csv</span>
+              {fileName && <span className="block text-xs text-steel mt-1 font-mono">{fileName}</span>}
+              <span className="block text-xs text-steel mt-1">Séparateur point-virgule « ; » ou virgule « , » — les deux fonctionnent</span>
+            </label>
+            {parseError && <ErrorNote>{parseError}</ErrorNote>}
+            {rows && rows.length > 0 && (
+              <div>
+                <p className="text-sm font-bold mb-2">Aperçu — {rows.length} chantier(s) détecté(s) :</p>
+                <div className="border border-gray-200 rounded-md overflow-x-auto max-h-52">
+                  <table className="w-full text-xs min-w-[560px]">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>{["Nom", "Client", "Adresse", "Contact", "Tél", "km", "min", "Notes"].map((h) => <th key={h} className="text-left px-2.5 py-1.5 font-bold uppercase text-[10px] text-steel">{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {rows.slice(0, 8).map((r, i) => (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-2.5 py-1.5 font-bold max-w-40 truncate">{r.name}</td>
+                          <td className="px-2.5 py-1.5 max-w-32 truncate">{r.client}</td>
+                          <td className="px-2.5 py-1.5 max-w-48 truncate">{r.address}</td>
+                          <td className="px-2.5 py-1.5 max-w-28 truncate">{r.contactName}</td>
+                          <td className="px-2.5 py-1.5">{r.contactPhone}</td>
+                          <td className="px-2.5 py-1.5">{r.distanceKm}</td>
+                          <td className="px-2.5 py-1.5">{r.travelMin}</td>
+                          <td className="px-2.5 py-1.5 max-w-40 truncate">{r.notes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {rows.length > 8 && <p className="text-xs text-steel mt-1.5">… et {rows.length - 8} autre(s). Les chantiers portant un nom déjà existant seront ignorés (pas de doublon).</p>}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
