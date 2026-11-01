@@ -100,11 +100,9 @@ export default function Dashboard() {
             <Link href="/planning" className="inline-flex items-center gap-2 bg-brand hover:brightness-110 text-white font-display font-bold uppercase tracking-wide text-sm px-4 py-2.5 rounded-md transition-all">
               <CalendarDays size={16} /> Planning
             </Link>
-            {isAdmin && (
-              <Link href="/planning?new=1" className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 font-display font-bold uppercase tracking-wide text-sm px-4 py-2.5 rounded-md transition-all">
-                <Plus size={16} /> Mission
-              </Link>
-            )}
+            <Link href="/planning?new=1" className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 font-display font-bold uppercase tracking-wide text-sm px-4 py-2.5 rounded-md transition-all">
+              <Plus size={16} /> Mission
+            </Link>
           </div>
         </div>
         {isAdmin && <div className="mt-5"><ShareLinkStrip /></div>}

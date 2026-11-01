@@ -23,7 +23,9 @@ export type ResourceConfig = {
 };
 
 export const RESOURCES: Record<string, ResourceConfig> = {
-  missions: { table: missions, label: "Mission", create: "admin", mutate: "admin", dateField: "date", filters: ["driverId", "chantierId", "vehicleId", "date"], immutable: ["createdBy", "createdAt"] },
+  // Les utilisateurs peuvent créer des missions et gérer celles qu'ils ont créées ;
+  // l'administrateur principal garde le contrôle de tout.
+  missions: { table: missions, label: "Mission", create: "auth", mutate: "ownerOrAdmin", ownerField: "createdBy", dateField: "date", filters: ["driverId", "chantierId", "vehicleId", "date"], immutable: ["createdBy", "createdAt"] },
   chantiers: { table: chantiers, label: "Chantier", create: "admin", mutate: "admin", immutable: ["createdAt"] },
   vehicles: { table: vehicles, label: "Véhicule", create: "admin", mutate: "admin", immutable: ["createdAt"] },
   alerts: { table: alerts, label: "Alerte panne", create: "auth", mutate: "ownerOrAdmin", ownerField: "createdBy", filters: ["status", "vehicleId"], immutable: ["createdBy", "createdByName", "createdAt"] },

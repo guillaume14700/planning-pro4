@@ -65,13 +65,14 @@ function Planning() {
   }, [chantiers, vehicles]);
 
   useEffect(() => {
-    if (params.get("new") === "1" && isAdmin && chantiers.length) openCreate(today, me.id);
+    if (params.get("new") === "1" && chantiers.length) openCreate(today, me.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, isAdmin, chantiers.length]);
+  }, [params, chantiers.length]);
 
   function openMission(m: MissionT) {
     setError("");
-    setReadOnly(!isAdmin);
+    // Modifiable par l'admin (tout) et par l'utilisateur qui a créé la mission.
+    setReadOnly(!(isAdmin || m.createdBy === me.id));
     setModal({
       id: m.id, date: m.date, driverId: String(m.driverId), chantierId: String(m.chantierId),
       vehicleId: String(m.vehicleId), startTime: m.startTime, endTime: m.endTime,
@@ -164,7 +165,7 @@ function Planning() {
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p className="font-display text-xl font-bold uppercase tracking-wide text-coal">Semaine du {weekLabel}</p>
         <div className="flex items-center gap-3 text-xs text-steel">
-          {isAdmin && <span className="hidden sm:inline">Cliquez sur une case pour planifier · sur une mission pour modifier</span>}
+          <span className="hidden sm:inline">Cliquez sur une case pour planifier · sur une mission pour la voir / la modifier</span>
           <a href="/feuille" className="inline-flex items-center gap-1 font-bold text-brand hover:underline"><Printer size={14} /> Feuille de route</a>
         </div>
       </div>
@@ -219,15 +220,13 @@ function Planning() {
                                 </button>
                               );
                             })}
-                            {isAdmin && (
-                              <button
-                                onClick={() => openCreate(d, u.id)}
-                                className="w-full rounded-md border border-dashed border-gray-300 text-steel hover:border-brand hover:text-brand hover:bg-brand/5 py-1 text-xs font-bold sm:opacity-0 sm:group-hover/cell:opacity-100 transition-all cursor-pointer flex items-center justify-center gap-1"
-                                aria-label="Ajouter une mission"
-                              >
-                                <Plus size={12} /> Mission
-                              </button>
-                            )}
+                            <button
+                              onClick={() => openCreate(d, u.id)}
+                              className="w-full rounded-md border border-dashed border-gray-300 text-steel hover:border-brand hover:text-brand hover:bg-brand/5 py-1 text-xs font-bold sm:opacity-0 sm:group-hover/cell:opacity-100 transition-all cursor-pointer flex items-center justify-center gap-1"
+                              aria-label="Ajouter une mission"
+                            >
+                              <Plus size={12} /> Mission
+                            </button>
                           </div>
                         </td>
                       );
