@@ -97,30 +97,34 @@ function Planning() {
   /* Aperçu RSE + trajets dans la modale */
   const preview = useMemo(() => {
     if (!modal) return null;
-    const c = cMap[Number(modal.chantierId)];
+    const c = modal.chantierId ? cMap[Number(modal.chantierId)] : undefined;
     const travel = c?.travelMin ?? 0;
     const start = toMin(modal.startTime), end = toMin(modal.endTime);
     if (end <= start) return { invalid: true } as const;
     const current: MissionLike = { date: modal.date, driverId: Number(modal.driverId), startTime: modal.startTime, endTime: modal.endTime, extraDrivingMin: Number(modal.extraDrivingMin || 0), travelMin: travel };
     const others = (missions ?? []).filter((m) => m.date === modal.date && m.driverId === Number(modal.driverId) && m.id !== modal.id)
-      .map((m) => ({ ...m, travelMin: cMap[m.chantierId]?.travelMin ?? 0 } as MissionLike));
+      .map((m) => ({ ...m, travelMin: (m.chantierId ? cMap[m.chantierId]?.travelMin : 0) ?? 0 } as MissionLike));
     const st = dayStats([...others, current]);
     const issues = dayIssues(st);
     const prevDay = (missions ?? []).filter((m) => m.date === addDays(modal.date, -1) && m.driverId === Number(modal.driverId));
     const prevEnd = prevDay.length ? Math.max(...prevDay.map((m) => toMin(m.endTime))) : null;
     const rest = restIssue(prevEnd, st.firstStart);
     if (rest) issues.push(rest);
-    const v = vMap[Number(modal.vehicleId)];
-    return { invalid: false as const, travel, km: c?.distanceKm ?? 0, onSite: toHHMM(start + travel), leaveSite: toHHMM(end - travel), st, issues, vehicle: v };
+    const v = modal.vehicleId ? vMap[Number(modal.vehicleId)] : undefined;
+    return { invalid: false as const, hasChantier: !!c, travel, km: c?.distanceKm ?? 0, onSite: toHHMM(start + travel), leaveSite: toHHMM(end - travel), st, issues, vehicle: v };
   }, [modal, missions, cMap, vMap]);
 
   async function save() {
     if (!modal) return;
     setBusy(true); setError("");
     try {
+      if (!modal.chantierId && !modal.notes.trim())
+        throw new Error("Pour une tâche libre (sans chantier), remplissez la note de mission : lieu, consignes…");
       const payload = {
-        date: modal.date, driverId: Number(modal.driverId), chantierId: Number(modal.chantierId),
-        vehicleId: Number(modal.vehicleId), startTime: modal.startTime, endTime: modal.endTime,
+        date: modal.date, driverId: Number(modal.driverId),
+        chantierId: modal.chantierId ? Number(modal.chantierId) : null,
+        vehicleId: modal.vehicleId ? Number(modal.vehicleId) : null,
+        startTime: modal.startTime, endTime: modal.endTime,
         extraDrivingMin: Number(modal.extraDrivingMin || 0), task: modal.task, notes: modal.notes,
       };
       if (modal.id) await api(`/api/missions/${modal.id}`, "PATCH", payload);
@@ -204,7 +208,8 @@ function Planning() {
                         <td key={d} className={`px-1.5 py-1.5 border-r border-gray-100 last:border-0 group/cell min-w-32 ${d === today ? "bg-brand/6" : ""}`}>
                           <div className="space-y-1.5">
                             {cell.map((m) => {
-                              const c = cMap[m.chantierId];
+                              const c = m.chantierId ? cMap[m.chantierId] : undefined;
+                              const v = m.vehicleId ? vMap[m.vehicleId] : undefined;
                               return (
                                 <button
                                   key={m.id}
@@ -215,8 +220,8 @@ function Planning() {
                                   <p className="font-mono text-[11px] font-semibold leading-none">{m.startTime}–{m.endTime}
                                     {conflicts.has(m.id) && <TriangleAlert size={11} className="inline ml-1 text-amber-500" />}
                                   </p>
-                                  <p className="text-[11.5px] font-bold leading-tight truncate mt-1">{c?.name ?? "?"}</p>
-                                  <p className="text-[10px] text-steel truncate">{vMap[m.vehicleId]?.name ?? "?"}</p>
+                                  <p className="text-[11.5px] font-bold leading-tight truncate mt-1">{c?.name ?? (m.task || "Tâche libre")}</p>
+                                  <p className="text-[10px] text-steel truncate">{v?.name ?? ""}</p>
                                 </button>
                               );
                             })}
@@ -274,14 +279,16 @@ function Planning() {
                   {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </Select>
               </Field>
-              <Field label="Véhicule" required>
+              <Field label="Véhicule">
                 <Select value={modal.vehicleId} disabled={readOnly} onChange={(e) => setModal({ ...modal, vehicleId: e.target.value })}>
+                  <option value="">— Sans véhicule —</option>
                   {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name} · {v.plate}{v.status !== "disponible" ? ` (${v.status})` : ""}</option>)}
                 </Select>
               </Field>
             </div>
-            <Field label="Chantier" required>
+            <Field label="Chantier" hint={modal.chantierId ? undefined : "Tâche libre : décrivez le lieu et les consignes dans la note de mission ci-dessous."}>
               <Select value={modal.chantierId} disabled={readOnly} onChange={(e) => setModal({ ...modal, chantierId: e.target.value })}>
+                <option value="">🗒️ — Tâche libre (sans chantier) —</option>
                 {chantiers.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.distanceKm} km / {c.travelMin} min</option>)}
               </Select>
             </Field>
@@ -295,28 +302,32 @@ function Planning() {
                 </Select>
               </Field>
             </div>
-            <Field label="Consignes / notes">
-              <Textarea value={modal.notes} disabled={readOnly} onChange={(e) => setModal({ ...modal, notes: e.target.value })} placeholder="Accès chantier, contact, sécurité, arrimage…" />
+            <Field label={modal.chantierId ? "Consignes / notes" : "Note de mission (lieu, consignes…)" } required={!modal.chantierId}>
+              <Textarea value={modal.notes} disabled={readOnly} onChange={(e) => setModal({ ...modal, notes: e.target.value })} placeholder={modal.chantierId ? "Accès chantier, contact, sécurité, arrimage…" : "Ex : intervention chez client Dupont, 14 rue de la Paix — apporter sangles…"} />
             </Field>
 
             {/* Aperçu trajets + RSE */}
             {preview && !preview.invalid && (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                  <span className="bg-coal text-white rounded px-2 py-1 font-mono">{modal.startTime} Dépôt</span>
-                  <ArrowRight size={13} className="text-steel" />
-                  <span className="text-steel">{preview.travel} min · {preview.km} km</span>
-                  <ArrowRight size={13} className="text-steel" />
-                  <span className="bg-brand text-white rounded px-2 py-1 font-mono">{preview.onSite} Sur site</span>
-                  <ArrowRight size={13} className="text-steel" />
-                  <span className="bg-brand/15 text-brand rounded px-2 py-1 font-mono">{preview.leaveSite} Fin chantier</span>
-                  <ArrowRight size={13} className="text-steel" />
-                  <span className="bg-coal text-white rounded px-2 py-1 font-mono">{modal.endTime} Retour dépôt</span>
-                </div>
+                {preview.hasChantier ? (
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                    <span className="bg-coal text-white rounded px-2 py-1 font-mono">{modal.startTime} Dépôt</span>
+                    <ArrowRight size={13} className="text-steel" />
+                    <span className="text-steel">{preview.travel} min · {preview.km} km</span>
+                    <ArrowRight size={13} className="text-steel" />
+                    <span className="bg-brand text-white rounded px-2 py-1 font-mono">{preview.onSite} Sur site</span>
+                    <ArrowRight size={13} className="text-steel" />
+                    <span className="bg-brand/15 text-brand rounded px-2 py-1 font-mono">{preview.leaveSite} Fin chantier</span>
+                    <ArrowRight size={13} className="text-steel" />
+                    <span className="bg-coal text-white rounded px-2 py-1 font-mono">{modal.endTime} Retour dépôt</span>
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold text-steel">🗒️ Tâche libre — pas de trajet chantier calculé. La note de mission décrit le lieu et les consignes.</p>
+                )}
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge color="coal">Amplitude {fmtDur(preview.st.service)}</Badge>
                   <Badge color="coal">Conduite jour {fmtDur(preview.st.driving)}</Badge>
-                  <Badge color="coal"><MapPin size={11} /> {preview.km * 2} km A/R</Badge>
+                  {preview.hasChantier && <Badge color="coal"><MapPin size={11} /> {preview.km * 2} km A/R</Badge>}
                   {preview.vehicle && preview.vehicle.status !== "disponible" && <Badge color="red"><Truck size={11} /> Véhicule {preview.vehicle.status} !</Badge>}
                 </div>
                 {preview.issues.length > 0 && (
@@ -328,7 +339,7 @@ function Planning() {
                     ))}
                   </div>
                 )}
-                {cMap[Number(modal.chantierId)]?.contactPhone && (
+                {modal.chantierId && cMap[Number(modal.chantierId)]?.contactPhone && (
                   <p className="text-xs text-steel flex items-center gap-1.5"><Phone size={12} /> Contact chantier : {cMap[Number(modal.chantierId)]?.contactName} — {cMap[Number(modal.chantierId)]?.contactPhone}</p>
                 )}
               </div>

@@ -83,8 +83,8 @@ export const missions = pgTable("missions", {
   id: serial("id").primaryKey(),
   date: text("date").notNull(), // YYYY-MM-DD
   driverId: integer("driver_id").notNull(),
-  chantierId: integer("chantier_id").notNull(),
-  vehicleId: integer("vehicle_id").notNull(),
+  chantierId: integer("chantier_id"), // null = tâche libre (sans chantier)
+  vehicleId: integer("vehicle_id"), // null = tâche sans véhicule (formation, administratif…)
   startTime: text("start_time").notNull(), // HH:MM prise de poste au dépôt
   endTime: text("end_time").notNull(), // HH:MM fin de service au dépôt
   extraDrivingMin: integer("extra_driving_min").notNull().default(0),

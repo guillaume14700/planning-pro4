@@ -73,8 +73,8 @@ const DDL: string[] = [
      id serial PRIMARY KEY,
      date text NOT NULL,
      driver_id integer NOT NULL,
-     chantier_id integer NOT NULL,
-     vehicle_id integer NOT NULL,
+     chantier_id integer,
+     vehicle_id integer,
      start_time text NOT NULL,
      end_time text NOT NULL,
      extra_driving_min integer NOT NULL DEFAULT 0,
@@ -183,6 +183,13 @@ async function run(): Promise<void> {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(727272)");
     for (const stmt of DDL) await client.query(stmt);
+
+    // Migrations d'ajustement (idempotentes) pour les bases déjà installées.
+    const MIGRATIONS = [
+      `ALTER TABLE missions ALTER COLUMN chantier_id DROP NOT NULL`, // tâches libres sans chantier
+      `ALTER TABLE missions ALTER COLUMN vehicle_id DROP NOT NULL`, // tâches sans véhicule
+    ];
+    for (const m of MIGRATIONS) await client.query(m);
 
     await client.query(`INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
 

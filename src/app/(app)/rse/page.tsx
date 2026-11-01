@@ -42,7 +42,7 @@ function Rse() {
   }, [weekStart, driver]);
   useEffect(() => { load().catch(() => setMissions([])); }, [load]);
 
-  const toLike = useCallback((m: MissionT): MissionLike => ({ ...m, travelMin: cMap[m.chantierId]?.travelMin ?? 0 }), [cMap]);
+  const toLike = useCallback((m: MissionT): MissionLike => ({ ...m, travelMin: (m.chantierId ? cMap[m.chantierId]?.travelMin : 0) ?? 0 }), [cMap]);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   const dayData = useMemo(() => {

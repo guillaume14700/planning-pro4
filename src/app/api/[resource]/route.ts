@@ -64,8 +64,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const payload = pickBody(cfg.table, body, cfg.immutable);
 
   if (resource === "missions") {
-    if (!payload.date || !payload.startTime || !payload.endTime || !payload.driverId || !payload.chantierId || !payload.vehicleId)
-      return Response.json({ error: "Champs obligatoires manquants." }, { status: 400 });
+    if (!payload.date || !payload.startTime || !payload.endTime || !payload.driverId)
+      return Response.json({ error: "Champs obligatoires manquants (date, chauffeur, horaires)." }, { status: 400 });
+    if (payload.chantierId === "" || payload.chantierId === 0) payload.chantierId = null;
+    if (payload.vehicleId === "" || payload.vehicleId === 0) payload.vehicleId = null;
     if (toMin(String(payload.endTime)) <= toMin(String(payload.startTime)))
       return Response.json({ error: "L'heure de fin doit être après l'heure de début." }, { status: 400 });
     payload.createdBy = me.id;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { HardHat, Plus, MapPin, Phone, Route, Clock, Pencil, Trash2, User, StickyNote } from "lucide-react";
+import { HardHat, Plus, MapPin, Phone, Route, Clock, Pencil, Trash2, User, StickyNote, Globe, Navigation, Calculator } from "lucide-react";
 import { useApp, api, ChantierT, ModuleGate } from "@/components/app-provider";
 import { Badge, Button, Card, Confirm, Empty, ErrorNote, Field, Input, Modal, PageHead, Textarea, Toggle } from "@/components/ui";
 import { PALETTE } from "@/lib/utils";
@@ -15,7 +15,7 @@ export default function ChantiersPage() {
 }
 
 function Chantiers() {
-  const { me, chantiers, refresh, toast } = useApp();
+  const { me, chantiers, refresh, toast, settings } = useApp();
   const isAdmin = me.role === "admin";
   const [form, setForm] = useState<Form | null>(null);
   const [error, setError] = useState("");
@@ -23,6 +23,31 @@ function Chantiers() {
   const [del, setDel] = useState<number | null>(null);
 
   const shown = isAdmin ? chantiers : chantiers.filter((c) => c.active);
+
+  /* Géolocalise l'adresse (OpenStreetMap) puis calcule distance/temps depuis le dépôt (OSRM). */
+  async function locate(c: ChantierT) {
+    if (!c.address) { toast("Renseignez d'abord l'adresse du chantier", "panne"); return; }
+    try {
+      const g = await api<{ lat: number; lon: number }>(`/api/geo?q=${encodeURIComponent(c.address)}`);
+      await api(`/api/chantiers/${c.id}`, "PATCH", { lat: g.lat, lng: g.lon });
+      toast("📍 Chantier placé sur la carte", "ok");
+      await refresh();
+    } catch (e) { toast(e instanceof Error ? e.message : "Erreur", "panne"); }
+  }
+
+  async function calcRoute(c: ChantierT) {
+    if (c.lat == null || c.lng == null) { toast("Localisez d'abord l'adresse du chantier", "panne"); return; }
+    try {
+      const r = await api<{ distanceKm: number; travelMin: number }>(`/api/geo?from=${settings.depotLat},${settings.depotLng}&to=${c.lat},${c.lng}`);
+      await api(`/api/chantiers/${c.id}`, "PATCH", { distanceKm: r.distanceKm, travelMin: r.travelMin });
+      toast(`🧮 Calculé : ${r.distanceKm} km · ${r.travelMin} min — enregistrés`, "ok");
+      await refresh();
+    } catch (e) { toast(e instanceof Error ? e.message : "Erreur", "panne"); }
+  }
+
+  const osmSrc = (lat: number, lng: number) =>
+    `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.012},${lat - 0.008},${lng + 0.012},${lat + 0.008}&layer=mapnik&marker=${lat},${lng}`;
+  const depotQ = encodeURIComponent(settings.depotAddress || `${settings.depotLat},${settings.depotLng}`);
 
   async function save() {
     if (!form) return;
@@ -83,6 +108,43 @@ function Chantiers() {
                   </p>
                 )}
                 {c.notes && <p className="text-xs text-steel bg-gray-50 border border-gray-200 rounded-md px-2.5 py-2 mt-3 flex gap-1.5"><StickyNote size={13} className="shrink-0 mt-0.5" />{c.notes}</p>}
+
+                {/* Carte + calcul de distance */}
+                {c.lat != null && c.lng != null ? (
+                  <div className="mt-3">
+                    <iframe
+                      title={`Carte du chantier ${c.name}`}
+                      className="w-full h-40 rounded-md border border-gray-200"
+                      loading="lazy"
+                      src={osmSrc(c.lat, c.lng)}
+                    />
+                    <div className="flex gap-3 mt-1.5 text-xs font-bold flex-wrap">
+                      <a className="text-brand hover:underline inline-flex items-center gap-1" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lng}`}>
+                        <Globe size={12} /> Agrandir / satellite
+                      </a>
+                      <a className="text-brand hover:underline inline-flex items-center gap-1" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&origin=${depotQ}&destination=${c.lat},${c.lng}`}>
+                        <Navigation size={12} /> Itinéraire dépôt → chantier
+                      </a>
+                    </div>
+                    {isAdmin && (
+                      <Button variant="outline" className="!py-1.5 text-xs mt-2" onClick={() => calcRoute(c)}>
+                        <Calculator size={13} /> Calculer distance & trajet depuis le dépôt
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-3 flex gap-2 flex-wrap items-center">
+                    <a className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address || c.name)}`}>
+                      <Globe size={12} /> Voir sur Google Maps
+                    </a>
+                    {isAdmin && (
+                      <Button variant="outline" className="!py-1 text-xs" onClick={() => locate(c)}>
+                        <MapPin size={12} /> Placer sur la carte
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 {isAdmin && (
                   <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
                     <Button variant="outline" className="flex-1 !py-1.5 text-xs" onClick={() => { setError(""); setForm({ id: c.id, name: c.name, client: c.client, address: c.address, contactName: c.contactName, contactPhone: c.contactPhone, distanceKm: String(c.distanceKm), travelMin: String(c.travelMin), lat: c.lat?.toString() ?? "", lng: c.lng?.toString() ?? "", color: c.color, notes: c.notes, active: c.active }); }}>
@@ -114,9 +176,35 @@ function Chantiers() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Field label="Distance dépôt (km)" required hint="aller simple"><Input type="number" min={0} step="0.1" value={form.distanceKm} onChange={(e) => setForm({ ...form, distanceKm: e.target.value })} /></Field>
               <Field label="Trajet (min)" required hint="PL, aller simple"><Input type="number" min={0} value={form.travelMin} onChange={(e) => setForm({ ...form, travelMin: e.target.value })} /></Field>
-              <Field label="Latitude" hint="météo (option)"><Input type="number" step="0.0001" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="45.75" /></Field>
-              <Field label="Longitude" hint="météo (option)"><Input type="number" step="0.0001" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="4.85" /></Field>
+              <Field label="Latitude" hint="carte / météo"><Input type="number" step="0.0001" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="45.75" /></Field>
+              <Field label="Longitude" hint="carte / météo"><Input type="number" step="0.0001" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="4.85" /></Field>
             </div>
+            <div className="flex gap-2 flex-wrap items-center">
+              <Button variant="outline" className="text-xs" onClick={async () => {
+                if (!form.address.trim()) { setError("Renseignez d'abord l'adresse complète."); return; }
+                setError("");
+                try {
+                  const g = await api<{ lat: number; lon: number }>(`/api/geo?q=${encodeURIComponent(form.address)}`);
+                  setForm({ ...form, lat: String(g.lat), lng: String(g.lon) });
+                  toast("📍 Adresse localisée — enregistrez", "ok");
+                } catch (e) { setError(e instanceof Error ? e.message : "Erreur"); }
+              }}><MapPin size={14} /> Localiser l'adresse</Button>
+              <Button variant="outline" className="text-xs" onClick={async () => {
+                if (!form.lat || !form.lng) { setError("Cliquez d'abord sur « Localiser l'adresse »."); return; }
+                setError("");
+                try {
+                  const r = await api<{ distanceKm: number; travelMin: number }>(`/api/geo?from=${settings.depotLat},${settings.depotLng}&to=${form.lat},${form.lng}`);
+                  setForm({ ...form, distanceKm: String(r.distanceKm), travelMin: String(r.travelMin) });
+                  toast(`🧮 ${r.distanceKm} km · ${r.travelMin} min — enregistrez`, "ok");
+                } catch (e) { setError(e instanceof Error ? e.message : "Erreur"); }
+              }}><Calculator size={14} /> Calculer distance & trajet depuis le dépôt</Button>
+              <a className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-1 ml-auto" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&origin=${depotQ}&destination=${encodeURIComponent(form.address || form.name)}`}>
+                <Navigation size={13} /> Vérifier sur Google Maps
+              </a>
+            </div>
+            {form.lat && form.lng && (
+              <iframe title="Aperçu carte" className="w-full h-40 rounded-md border border-gray-200" loading="lazy" src={osmSrc(Number(form.lat), Number(form.lng))} />
+            )}
             <Field label="Couleur planning">
               <div className="flex gap-2 flex-wrap">
                 {PALETTE.map((p) => (

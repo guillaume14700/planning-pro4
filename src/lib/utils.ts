@@ -82,6 +82,10 @@ export const TASKS = [
   "Transport d'engins",
   "Béton / toupie",
   "Montage / démontage grue",
+  "Tâche libre / note de mission",
+  "Formation / CACES",
+  "Entretien / nettoyage véhicule",
+  "Administratif",
   "Autre",
 ];
 

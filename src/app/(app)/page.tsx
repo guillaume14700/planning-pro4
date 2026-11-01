@@ -53,7 +53,7 @@ export default function Dashboard() {
   const todays = (missions ?? []).filter((m) => m.date === today && (scope === "team" || m.driverId === me.id))
     .sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
   const allToday = (missions ?? []).filter((m) => m.date === today);
-  const kmToday = allToday.reduce((a, m) => a + (cMap[m.chantierId]?.distanceKm ?? 0) * 2, 0);
+  const kmToday = allToday.reduce((a, m) => a + ((m.chantierId ? cMap[m.chantierId]?.distanceKm : 0) ?? 0) * 2, 0);
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const dispo = vehicles.filter((v) => v.status === "disponible").length;
 
@@ -136,8 +136,8 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-2.5">
               {todays.map((m) => {
-                const c = cMap[m.chantierId];
-                const v = vMap[m.vehicleId];
+                const c = m.chantierId ? cMap[m.chantierId] : undefined;
+                const v = m.vehicleId ? vMap[m.vehicleId] : undefined;
                 const u = uMap[m.driverId];
                 const running = nowMin >= toMin(m.startTime) && nowMin <= toMin(m.endTime);
                 const done = nowMin > toMin(m.endTime);
@@ -148,10 +148,14 @@ export default function Dashboard() {
                       {m.startTime}<br /><span className="text-steel">{m.endTime}</span>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-bold text-sm truncate">{c?.name ?? "Chantier"} <span className="text-steel font-normal">· {m.task}</span></p>
-                      <p className="text-xs text-steel truncate mt-0.5 flex items-center gap-1">
-                        <MapPin size={11} /> {c?.distanceKm ?? "?"} km · {c?.travelMin ?? "?"} min — sur site {toHHMM(toMin(m.startTime) + (c?.travelMin ?? 0))} · <Truck size={11} /> {v?.name ?? "?"}
-                      </p>
+                      <p className="font-bold text-sm truncate">{c?.name ?? "Tâche libre"} <span className="text-steel font-normal">· {m.task}</span></p>
+                      {c ? (
+                        <p className="text-xs text-steel truncate mt-0.5 flex items-center gap-1">
+                          <MapPin size={11} /> {c.distanceKm} km · {c.travelMin} min — sur site {toHHMM(toMin(m.startTime) + c.travelMin)}{v ? <> · <Truck size={11} /> {v.name}</> : ""}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-steel truncate mt-0.5">{m.notes || "Sans chantier ni trajet"}{v ? ` · ${v.name}` : ""}</p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       {u && scope === "team" && (

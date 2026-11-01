@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Settings, Users, Puzzle, Palette, Warehouse, Plus, KeyRound, Ban, Trash2,
-  Pencil, ShieldCheck, Unlock, Copy, CheckCircle2, Upload, Lock, Image as ImageIcon, Share2,
+  Pencil, ShieldCheck, Unlock, Copy, CheckCircle2, Upload, Lock, Image as ImageIcon, Share2, MapPin,
 } from "lucide-react";
 import { useApp, api, UserT, ModuleGate } from "@/components/app-provider";
 import ShareTab from "@/components/share-tab";
@@ -395,8 +395,18 @@ function DepotTab() {
       <Field label="Nom du dépôt"><Input value={form.depotName} onChange={(e) => setForm({ ...form, depotName: e.target.value })} /></Field>
       <Field label="Adresse complète"><Input value={form.depotAddress} onChange={(e) => setForm({ ...form, depotAddress: e.target.value })} /></Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Latitude" hint="météo du dépôt"><Input type="number" step="0.0001" value={form.depotLat} onChange={(e) => setForm({ ...form, depotLat: e.target.value })} /></Field>
-        <Field label="Longitude" hint="météo du dépôt"><Input type="number" step="0.0001" value={form.depotLng} onChange={(e) => setForm({ ...form, depotLng: e.target.value })} /></Field>
+        <Field label="Latitude" hint="météo + calculs de distance"><Input type="number" step="0.0001" value={form.depotLat} onChange={(e) => setForm({ ...form, depotLat: e.target.value })} /></Field>
+        <Field label="Longitude" hint="météo + calculs de distance"><Input type="number" step="0.0001" value={form.depotLng} onChange={(e) => setForm({ ...form, depotLng: e.target.value })} /></Field>
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <Button variant="outline" onClick={async () => {
+          if (!form.depotAddress.trim()) { toast("Renseignez d'abord l'adresse du dépôt", "panne"); return; }
+          try {
+            const g = await api<{ lat: number; lon: number }>(`/api/geo?q=${encodeURIComponent(form.depotAddress)}`);
+            setForm({ ...form, depotLat: String(g.lat), depotLng: String(g.lon) });
+            toast("📍 Dépôt localisé — cliquez sur Enregistrer", "ok");
+          } catch (e) { toast(e instanceof Error ? e.message : "Erreur", "panne"); }
+        }}><MapPin size={15} /> Localiser le dépôt sur la carte</Button>
       </div>
       <Button onClick={save} disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer"}</Button>
     </Card>

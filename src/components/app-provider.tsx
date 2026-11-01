@@ -17,7 +17,7 @@ export type ChantierT = {
 };
 export type VehicleT = { id: number; name: string; plate: string; type: string; status: string; km: number; notes: string };
 export type MissionT = {
-  id: number; date: string; driverId: number; chantierId: number; vehicleId: number;
+  id: number; date: string; driverId: number; chantierId: number | null; vehicleId: number | null;
   startTime: string; endTime: string; extraDrivingMin: number; task: string; notes: string;
   createdBy: number; updatedAt?: string;
 };

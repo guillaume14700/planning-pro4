@@ -39,8 +39,12 @@ export const RESOURCES: Record<string, ResourceConfig> = {
 
 async function missionLabel(m: Row): Promise<string> {
   const [d] = await db.select().from(users).where(eq(users.id, Number(m.driverId))).limit(1);
-  const [c] = await db.select().from(chantiers).where(eq(chantiers.id, Number(m.chantierId))).limit(1);
-  return `${d?.name ?? "Chauffeur"} → ${c?.name ?? "Chantier"} le ${fmtFr(String(m.date))} de ${m.startTime} à ${m.endTime}`;
+  let dest = `Tâche libre${m.task ? ` — ${m.task}` : ""}`;
+  if (m.chantierId) {
+    const [c] = await db.select().from(chantiers).where(eq(chantiers.id, Number(m.chantierId))).limit(1);
+    if (c) dest = c.name;
+  }
+  return `${d?.name ?? "Chauffeur"} → ${dest} le ${fmtFr(String(m.date))} de ${m.startTime} à ${m.endTime}`;
 }
 
 function diffMissions(before: Row, after: Row): string {

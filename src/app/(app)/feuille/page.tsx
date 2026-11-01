@@ -85,8 +85,8 @@ function Feuille() {
                 <div key={m.id} className="py-5">
                   <div className="flex items-center gap-2 mb-3">
                     <span className="w-7 h-7 rounded-md bg-coal text-accent font-display font-extrabold flex items-center justify-center">{idx + 1}</span>
-                    <h3 className="font-display text-xl font-extrabold uppercase">{c?.name ?? "Chantier"}</h3>
-                    <span className="text-sm text-steel">— {m.task}</span>
+                    <h3 className="font-display text-xl font-extrabold uppercase">{c?.name ?? m.task ?? "Tâche libre"}</h3>
+                    {c && <span className="text-sm text-steel">— {m.task}</span>}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                     {[
@@ -102,10 +102,14 @@ function Feuille() {
                     ))}
                   </div>
                   <div className="grid md:grid-cols-2 gap-2 text-sm">
-                    <p className="flex items-start gap-1.5"><MapPin size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Chantier :</strong> {c?.address || "—"} · {c?.distanceKm ?? "?"} km / {travel} min</span></p>
-                    <p className="flex items-start gap-1.5"><Phone size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Contact :</strong> {c?.contactName || "—"} {c?.contactPhone ? `· ${c.contactPhone}` : ""}</span></p>
-                    <p className="flex items-start gap-1.5"><Truck size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Véhicule :</strong> {v?.name} · {v?.plate} ({VEHICLE_TYPES[v?.type ?? ""] ?? "—"})</span></p>
-                    {m.notes && <p className="flex items-start gap-1.5"><FileText size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Consignes :</strong> {m.notes}</span></p>}
+                    {c ? (
+                      <p className="flex items-start gap-1.5"><MapPin size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Chantier :</strong> {c.address || "—"} · {c.distanceKm} km / {travel} min</span></p>
+                    ) : (
+                      <p className="flex items-start gap-1.5"><MapPin size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Tâche libre</strong> (sans chantier) — voir note de mission</span></p>
+                    )}
+                    {c && <p className="flex items-start gap-1.5"><Phone size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Contact :</strong> {c.contactName || "—"} {c.contactPhone ? `· ${c.contactPhone}` : ""}</span></p>}
+                    {v && <p className="flex items-start gap-1.5"><Truck size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>Véhicule :</strong> {v.name} · {v.plate} ({VEHICLE_TYPES[v.type] ?? "—"})</span></p>}
+                    {m.notes && <p className="flex items-start gap-1.5"><FileText size={14} className="mt-0.5 text-steel shrink-0" /><span><strong>{c ? "Consignes" : "Note de mission"} :</strong> {m.notes}</span></p>}
                   </div>
                   {c?.notes && <p className="text-xs bg-gray-50 border border-gray-200 rounded px-2.5 py-1.5 mt-2"><strong>Accès / sécurité :</strong> {c.notes}</p>}
                 </div>
